@@ -7,3 +7,6 @@ package «TraceLogic» where
 
 @[default_target]
 lean_lib «TraceLogic» where
+
+@[default_target]
+lean_lib «RequestProject» where

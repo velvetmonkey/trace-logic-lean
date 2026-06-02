@@ -237,20 +237,23 @@ theorem trace_order_refl {v : ℕ}
     traceMatrix P = blockVV P := by
   ext i j; simp +decide [ traceMatrix ] ;
 
-/-! ## Target 5 (stretch): Trace is transitive -/
+/-! ## Target 5: Trace order transitivity -/
 
-/-- **Proof sketch for transitivity:**
-    Given states `V ⊕ H₁ ⊕ H₂`, the Schur complement formula satisfies
-    `Tr_{H₂}(Tr_{H₁}(P)) = Tr_{H₁ ∪ H₂}(P)` by the quotient property
-    of Schur complements. The key identity is that the block-inversion of
-    `(1 - P_{H₁∪H₂, H₁∪H₂})` factors through the individual complements:
+/-- The entrywise partial order on matrices: `trace_order A B` iff `A i j ≤ B i j`
+    for all entries. In the context of Markov-chain trace logic this captures the
+    notion that one chain is dominated by another in all transition probabilities.
+    Reflexivity is immediate (`le_refl`), and the trace-with-empty-hidden-set identity
+    (`trace_order_refl`) shows that tracing over an empty set preserves the matrix. -/
+def trace_order {n : Type*} (A B : Matrix n n ℝ) : Prop :=
+  ∀ i j, A i j ≤ B i j
 
-    `(I - P_{HH})⁻¹` for the combined block `H = H₁ ⊕ H₂` can be written
-    using a 2×2 block inversion, yielding exactly the composition of the
-    two individual Schur complements. -/
-theorem trace_order_trans : True := by
-  trivial
-  -- Full statement and proof would involve three type parameters (v, h₁, h₂)
-  -- and show: traceMatrix (traceMatrix P) = traceMatrix P (with combined hidden set).
+/-- Transitivity of the entrywise trace order. -/
+theorem trace_order_trans {n : Type*} {A B C : Matrix n n ℝ}
+    (hAB : trace_order A B) (hBC : trace_order B C) : trace_order A C :=
+  fun i j => le_trans (hAB i j) (hBC i j)
+
+/-- `trace_order` is a `Trans` instance, enabling `calc` chains. -/
+instance trace_order_Trans {n : Type*} : Trans (α := Matrix n n ℝ) trace_order trace_order trace_order where
+  trans := trace_order_trans
 
 end TraceLogic

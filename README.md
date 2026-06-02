@@ -1,7 +1,9 @@
 # trace-logic-lean
 
-[![Lean](https://img.shields.io/badge/Lean-4.28.0-blue.svg)](https://lean-lang.org/)
-[![Mathlib](https://img.shields.io/badge/Mathlib-v4.28.0-blue.svg)](https://github.com/leanprover-community/mathlib4)
+[![Lean 4](https://img.shields.io/badge/Lean-4.28.0-blue)](https://lean-lang.org/)
+[![Mathlib](https://img.shields.io/badge/Mathlib-v4.28.0-purple)](https://github.com/leanprover-community/mathlib4)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Proofs](https://img.shields.io/badge/proofs-Phase%201%20compiled%20%2F%20Target%205%20open-yellowgreen)](TraceLogic)
 
 Lean 4 / Mathlib formalisation of Phase 1 Hoffman trace logic for finite Markov chains.
 

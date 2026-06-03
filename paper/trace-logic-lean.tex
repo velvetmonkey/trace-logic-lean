@@ -1,0 +1,318 @@
+% !TEX TS-program = xelatex
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fontspec}
+\usepackage[strings]{underscore}
+\setmonofont{DejaVu Sans Mono}
+
+\lstdefinestyle{lean}{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  xleftmargin=0.5em,
+  xrightmargin=0.5em,
+  backgroundcolor=\color{gray!5}
+}
+
+\title{\texttt{trace-logic-lean}: Formal Trace Logic for Finite Markov Chains in Lean 4}
+\author{Ben Cassie}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The repository \texttt{trace-logic-lean} formalises a finite-state trace operation for Markov chains in Lean 4 and Mathlib.
+The trace operation observes a visible block while marginalising hidden states through a Schur-complement expression.
+The development proves row-stochasticity of the trace, the trace tower property, transitivity of a trace-semantic order, and transient-hidden-block corollaries that discharge the Schur-complement invertibility hypotheses.
+The formalisation is complete in the repository state described here: the Lean source contains zero \texttt{sorry} or \texttt{admit}, and the headline results use only the standard axioms \texttt{propext}, \texttt{Classical.choice}, and \texttt{Quot.sound}.
+\end{abstract}
+
+\section{Introduction}
+
+Trace logic for finite Markov chains studies what remains visible when a system has both observed and unobserved states.
+Given a transition matrix whose state space is decomposed as a disjoint sum of visible states and hidden states, one can eliminate the hidden block and obtain an effective transition operator on the visible block.
+For finite matrices this effective operator is the Schur-complement expression
+\[
+  P_{VV} + P_{VH}(1-P_{HH})^{-1}P_{HV}.
+\]
+In probabilistic language, this records direct visible-to-visible transitions together with excursions through hidden states before returning to the visible sector.
+
+This note describes the Lean 4 formalisation in the public repository
+\[
+  \texttt{github.com/velvetmonkey/trace-logic-lean}.
+\]
+The work is a companion note for a formal artefact, not a claim of new Markov-chain mathematics.
+The underlying identities are classical Schur-complement and censored-chain facts, and the motivation is close to Hoffman-Prakash trace logic: an observer sees a visible process while unobserved states are marginalised away.
+The contribution is the machine-checked, reusable formalisation in Mathlib style, together with an elementary proof route for transient hidden blocks that avoids Perron-Frobenius theory.
+
+The repository is organised in three Lean modules.
+\texttt{TraceLogic/TraceLogic.lean} defines the basic trace map, row-stochasticity, nonnegativity, and entrywise trace order.
+\texttt{RequestProject/TraceLogicPhase3.lean} proves the trace tower property and the transitivity of a trace-semantic order.
+\texttt{RequestProject/TraceLogicPhase5.lean} proves that the required invertibility hypotheses follow for transient hidden blocks and derives unconditional transient corollaries.
+
+\section{Formal Setup}
+
+The base file works over finite matrices with real entries.
+The row-stochastic predicate is a bundled proposition.
+\begin{lstlisting}[style=lean]
+structure IsRowStochastic {n : Type*} [Fintype n] (P : Matrix n n ℝ) : Prop where
+  nonneg : ∀ i j, 0 ≤ P i j
+  row_sum : ∀ i, ∑ j, P i j = 1
+\end{lstlisting}
+
+The nonnegativity predicate and trace map are:
+\begin{lstlisting}[style=lean]
+def IsNonneg {m n : Type*} (M : Matrix m n ℝ) : Prop :=
+  ∀ i j, 0 ≤ M i j
+
+def traceMatrix {v h : Type*} [Fintype v] [Fintype h] [DecidableEq v] [DecidableEq h]
+    (P : Matrix (v ⊕ h) (v ⊕ h) ℝ) : Matrix v v ℝ :=
+  blockVV P + blockVH P * (1 - blockHH P)⁻¹ * blockHV P
+\end{lstlisting}
+The block projections \texttt{blockVV}, \texttt{blockVH}, \texttt{blockHV}, and \texttt{blockHH} are submatrices induced by the sum injections.
+The formalisation also defines \texttt{matOpNorm}, the all-ones vector \texttt{ones}, and the entrywise order:
+\begin{lstlisting}[style=lean]
+def trace_order {n : Type*} (A B : Matrix n n ℝ) : Prop :=
+  ∀ i j, A i j ≤ B i j
+\end{lstlisting}
+
+Phase 5 adds two hidden-block hypotheses.
+\begin{lstlisting}[style=lean]
+structure IsStrictlySubstochastic {n : Type*} [Fintype n]
+    (A : Matrix n n ℝ) : Prop where
+  nonneg : ∀ i j, 0 ≤ A i j
+  row_sum_lt : ∀ i, ∑ j, A i j < 1
+
+structure IsTransientHidden {n : Type*} [Fintype n] [DecidableEq n]
+    (A : Matrix n n ℝ) : Prop where
+  nonneg : ∀ i j, 0 ≤ A i j
+  exists_N : ∃ N : ℕ, ∀ i, ∑ j, (A ^ N) i j < 1
+\end{lstlisting}
+Thus transience is formalised by a finite-power row-sum escape condition: some power of the hidden transition block is strictly substochastic.
+
+\section{Main Results}
+
+\subsection{Trace Stochasticity}
+
+The basic Markov-chain theorem says that the Schur-complement trace of a row-stochastic matrix is row-stochastic when the hidden inverse exists and is nonnegative:
+\begin{lstlisting}[style=lean]
+theorem trace_row_stochastic {v h : Type*} [Fintype v] [Fintype h]
+    [DecidableEq v] [DecidableEq h]
+    {P : Matrix (v ⊕ h) (v ⊕ h) ℝ} (hP : IsRowStochastic P)
+    (hinv : IsUnit (1 - blockHH P))
+    (hinv_nn : IsNonneg ((1 - blockHH P)⁻¹)) :
+    IsRowStochastic (traceMatrix P)
+\end{lstlisting}
+This is built from \texttt{trace_nonneg} and \texttt{trace_row_sum}.
+The row-sum proof uses the all-ones vector and the identity
+\texttt{inv_blockHV_mulVec_ones}.
+
+\subsection{The Trace Tower}
+
+The trace tower is the formal Schur-complement composition law.
+The file \texttt{RequestProject/TraceLogicPhase3.lean} defines a reindexing operation and a two-step trace:
+\begin{lstlisting}[style=lean]
+def reindexForTrace {v h1 h2 : Type*}
+    (P : Matrix (v ⊕ (h1 ⊕ h2)) (v ⊕ (h1 ⊕ h2)) ℝ) :
+    Matrix ((v ⊕ h2) ⊕ h1) ((v ⊕ h2) ⊕ h1) ℝ
+
+def traceTwo {v h1 h2 : Type*} [Fintype v] [Fintype h1] [Fintype h2]
+    [DecidableEq v] [DecidableEq h1] [DecidableEq h2]
+    (P : Matrix (v ⊕ (h1 ⊕ h2)) (v ⊕ (h1 ⊕ h2)) ℝ) : Matrix v v ℝ
+\end{lstlisting}
+The headline theorem is:
+\begin{lstlisting}[style=lean]
+theorem trace_tower {v h1 h2 : Type*} [Fintype v] [Fintype h1] [Fintype h2]
+    [DecidableEq v] [DecidableEq h1] [DecidableEq h2]
+    (P : Matrix (v ⊕ (h1 ⊕ h2)) (v ⊕ (h1 ⊕ h2)) ℝ)
+    (hunit_h1 : IsUnit (1 - blockHH (reindexForTrace P)))
+    (hunit_h2 : IsUnit (1 - blockHH (traceMatrix (reindexForTrace P))))
+    (hunit_combined : IsUnit (1 - blockHH P)) :
+    traceTwo P = traceMatrix P
+\end{lstlisting}
+It states that hiding \(h_1\) and then \(h_2\) gives the same visible matrix as hiding \(h_1 \oplus h_2\) at once, provided the three Schur complements exist.
+The formal proof avoids importing a full \(2\times 2\) block-matrix inversion theorem.
+Instead it proves block-equation identities for the hidden equations, including \texttt{Y1_eq}, \texttt{Y2_schur_eq}, \texttt{Q_blockVV}, \texttt{Q_blockVH}, \texttt{Q_blockHV}, \texttt{Q_blockHH}, and \texttt{traceMatrix_eq_Q_plus_correction}.
+
+\subsection{Trace-Semantic Order}
+
+The trace-semantic order is an existential witness relation.
+\begin{lstlisting}[style=lean]
+def trace_sem_le {n : Type*} [Fintype n] [DecidableEq n]
+    (A B : Matrix n n ℝ) : Prop :=
+  ∃ (k : ℕ) (P : Matrix (n ⊕ Fin k) (n ⊕ Fin k) ℝ),
+    blockVV P = A ∧ traceMatrix P = B
+\end{lstlisting}
+Reflexivity uses the empty hidden block:
+\begin{lstlisting}[style=lean]
+theorem trace_sem_le_refl {n : Type*} [Fintype n] [DecidableEq n]
+    (A : Matrix n n ℝ) : trace_sem_le A A
+\end{lstlisting}
+The relation refines entrywise order under nonnegativity hypotheses:
+\begin{lstlisting}[style=lean]
+theorem trace_sem_le_implies_trace_order {n : Type*} [Fintype n] [DecidableEq n]
+    {A B : Matrix n n ℝ}
+    {k : ℕ} {P : Matrix (n ⊕ Fin k) (n ⊕ Fin k) ℝ}
+    (hVV : blockVV P = A) (htr : traceMatrix P = B)
+    (hP_nn : IsNonneg P)
+    (hinv_nn : IsNonneg ((1 - blockHH P)⁻¹)) :
+    trace_order A B
+\end{lstlisting}
+The transitivity theorem composes two hidden-state witnesses:
+\begin{lstlisting}[style=lean]
+theorem trace_sem_le_trans {n : Type*} [Fintype n] [DecidableEq n]
+    {A B C : Matrix n n ℝ}
+    (hAB : trace_sem_le A B) (hBC : trace_sem_le B C)
+    (hunit_AB : ∀ (k : ℕ) (P : Matrix (n ⊕ Fin k) (n ⊕ Fin k) ℝ),
+      blockVV P = A → traceMatrix P = B → IsUnit (1 - blockHH P))
+    (hunit_BC : ∀ (k : ℕ) (P : Matrix (n ⊕ Fin k) (n ⊕ Fin k) ℝ),
+      blockVV P = B → traceMatrix P = C → IsUnit (1 - blockHH P)) :
+    trace_sem_le A C
+\end{lstlisting}
+The proof constructs a combined witness on \(n \oplus (\mathrm{Fin}\ k_1 \oplus \mathrm{Fin}\ k_2)\), then converts it to the required \(\mathrm{Fin}(k_1+k_2)\) witness through \texttt{trace_sem_le_of_exists}.
+
+\subsection{Invertibility for Transient Hidden Blocks}
+
+The Phase 5 theorem \texttt{isUnit_one_sub_of_strictly_substochastic} proves the clean one-step case:
+\begin{lstlisting}[style=lean]
+theorem isUnit_one_sub_of_strictly_substochastic {n : Type*} [Fintype n] [DecidableEq n]
+    {A : Matrix n n ℝ} (hA : IsStrictlySubstochastic A) :
+    IsUnit (1 - A)
+\end{lstlisting}
+The headline transient theorem is:
+\begin{lstlisting}[style=lean]
+theorem isUnit_one_sub_of_transient {n : Type*} [Fintype n] [DecidableEq n]
+    {A : Matrix n n ℝ} (hA : IsTransientHidden A) :
+    IsUnit (1 - A)
+\end{lstlisting}
+This result discharges the invertibility side condition for the full transient class as formalised in the repository.
+The corresponding corollaries are:
+\begin{lstlisting}[style=lean]
+theorem trace_tower_transient
+    {v h1 h2 : Type*} [Fintype v] [Fintype h1] [Fintype h2]
+    [DecidableEq v] [DecidableEq h1] [DecidableEq h2]
+    (P : Matrix (v ⊕ (h1 ⊕ h2)) (v ⊕ (h1 ⊕ h2)) ℝ)
+    (hHH_h1 : IsTransientHidden (blockHH (reindexForTrace P)))
+    (hHH_Q : IsTransientHidden (blockHH (traceMatrix (reindexForTrace P))))
+    (hHH_combined : IsTransientHidden (blockHH P)) :
+    traceTwo P = traceMatrix P
+\end{lstlisting}
+\begin{lstlisting}[style=lean]
+theorem trace_sem_le_trans_transient {n : Type*} [Fintype n] [DecidableEq n]
+    {A B C : Matrix n n ℝ}
+    (hAB : trace_sem_le A B) (hBC : trace_sem_le B C)
+    (hunit_AB : ∀ (k : ℕ) (P : Matrix (n ⊕ Fin k) (n ⊕ Fin k) ℝ),
+      blockVV P = A → traceMatrix P = B →
+      IsTransientHidden (blockHH P))
+    (hunit_BC : ∀ (k : ℕ) (P : Matrix (n ⊕ Fin k) (n ⊕ Fin k) ℝ),
+      blockVV P = B → traceMatrix P = C →
+      IsTransientHidden (blockHH P)) :
+    trace_sem_le A C
+\end{lstlisting}
+These theorems are unconditional relative to the transient hidden-block hypotheses: the required \texttt{IsUnit} facts are proved inside Lean rather than assumed as theorem parameters.
+
+\section{A Perron-Frobenius-Free Invertibility Argument}
+
+The elementary transient argument is the most methodologically useful part of the formalisation.
+Classically one might prove invertibility of \(1-A\) from \(\rho(A)<1\), using Perron-Frobenius theory or spectral-radius estimates for nonnegative matrices.
+That route requires a library of spectral-radius facts for nonnegative matrices.
+The Lean development instead uses the finite-power row-sum condition in \texttt{IsTransientHidden}.
+
+The strict case proves that if \(A\) is entrywise nonnegative and every row sum is less than \(1\), then \((1-A)\mathrm{.mulVec}\) is injective:
+\begin{lstlisting}[style=lean]
+theorem mulVec_one_sub_injective {n : Type*} [Fintype n] [DecidableEq n]
+    {A : Matrix n n ℝ} (hA : IsStrictlySubstochastic A) :
+    Function.Injective (1 - A).mulVec
+\end{lstlisting}
+The proof chooses an index where \(|x_i|\) is maximal.
+If \(x=Ax\), nonnegativity gives
+\[
+ |x_i| \leq \sum_j A_{ij}|x_j| \leq \left(\sum_j A_{ij}\right)|x_i| < |x_i|,
+\]
+unless \(x=0\).
+Lean then converts injectivity of \(\mathrm{mulVec}\) into \texttt{IsUnit (1 - A)} via Mathlib's matrix column-independence machinery.
+
+For the transient case, the source proves:
+\begin{lstlisting}[style=lean]
+theorem IsNonneg_pow {n : Type*} [Fintype n] [DecidableEq n]
+    {A : Matrix n n ℝ} (hA : ∀ i j, 0 ≤ A i j) (k : ℕ) :
+    ∀ i j, 0 ≤ (A ^ k) i j
+
+theorem mulVec_one_sub_injective_of_transient {n : Type*} [Fintype n] [DecidableEq n]
+    {A : Matrix n n ℝ} (hA : IsTransientHidden A) :
+    Function.Injective (1 - A).mulVec
+\end{lstlisting}
+The proof obtains \(N\) such that \(A^N\) is strictly substochastic.
+It proves that \(1-A^N\) is invertible by applying the strict result to \(A^N\).
+Then it uses the finite geometric factorisation
+\[
+  (1-A)(1+A+\cdots+A^{N-1}) = 1-A^N
+\]
+to conclude that \(1-A\) is invertible.
+This sidesteps Perron-Frobenius entirely.
+The spectral-radius formulation remains useful mathematical background, but it is not needed for the present Lean theorem.
+
+\section{Verification and Axioms}
+
+The Lean source files under \texttt{RequestProject/} and \texttt{TraceLogic/} contain zero occurrences of \texttt{sorry} or \texttt{admit}.
+The headline results were checked with \texttt{\#print axioms}.
+Each of the following depends only on \texttt{propext}, \texttt{Classical.choice}, and \texttt{Quot.sound}: \texttt{trace_tower}, \texttt{trace_sem_le_trans}, \texttt{isUnit_one_sub_of_strictly_substochastic}, \texttt{isUnit_one_sub_of_transient}, \texttt{trace_tower_substochastic}, \texttt{trace_sem_le_trans_substochastic}, \texttt{trace_tower_transient}, \texttt{trace_sem_le_trans_transient}, \texttt{trace_row_stochastic}, \texttt{trace_sem_le_refl}, and \texttt{trace_sem_le_implies_trace_order}.
+No checked headline theorem depends on \texttt{sorryAx}.
+
+\section{Honesty About Scope}
+
+The mathematics formalised here is classical.
+Schur complements, censored finite Markov chains, and the quotient behaviour of eliminating hidden states are standard topics.
+This paper does not claim a new trace theorem for Markov chains.
+Its contribution is that the relevant finite-dimensional trace identities, witness composition, and transient-invertibility obligations have been made explicit, reusable, and machine certified in Lean 4.
+
+The elementary transient closure is also not a new theorem in probability theory.
+Its value here is methodological: it avoids a heavier Perron-Frobenius dependency and fits the current Mathlib environment.
+This makes the formal development more robust and reduces the amount of upstream spectral theory needed before the trace-logic results can be used.
+
+\section{Motivating Connection to Witnesses}
+
+One motivation for trace logic is witness theory: an observer may see only a projection of a larger state space while hidden mechanisms continue to affect visible behaviour.
+The relation \texttt{trace_sem_le} makes this idea concrete by existentially quantifying a hidden-state witness matrix whose trace is the observed operator.
+The paper does not prove philosophical or epistemic claims about observers.
+It only formalises the matrix-level mechanism by which unobserved finite states can be marginalised and composed.
+
+\section{Conclusion}
+
+\texttt{trace-logic-lean} gives a complete zero-sorry Lean 4 formalisation of finite trace logic for Markov chains in the Schur-complement setting.
+The main certified results are row-stochasticity of the trace, the trace tower property, trace-semantic order transitivity, and transient-hidden-block corollaries that remove explicit invertibility hypotheses.
+The development uses standard Mathlib axioms only and avoids Perron-Frobenius theory for the transient invertibility theorem.
+Future work could connect the finite-power row-sum transience predicate to spectral-radius and Perron-Frobenius formulations as Mathlib's nonnegative matrix theory grows.
+
+\begin{thebibliography}{9}
+
+\bibitem{hoffman-prakash}
+M.~Hoffman and P.~Prakash.
+\newblock Trace logic for probabilistic systems.
+\newblock Cited here as background motivation for the trace-logic viewpoint.
+
+\bibitem{meyer}
+C.~D. Meyer.
+\newblock \emph{Matrix Analysis and Applied Linear Algebra}.
+\newblock SIAM, 2000.
+
+\bibitem{mathlib}
+The Mathlib Community.
+\newblock The Lean mathematical library.
+\newblock \url{https://github.com/leanprover-community/mathlib4}.
+
+\bibitem{repo}
+Ben Cassie.
+\newblock \texttt{trace-logic-lean}.
+\newblock \url{https://github.com/velvetmonkey/trace-logic-lean}.
+
+\end{thebibliography}
+
+\end{document}

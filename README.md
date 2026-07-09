@@ -116,3 +116,6 @@ lake build
 ## Verification
 
 The Phase 5 source compiles cleanly with Mathlib v4.28.0 and contains no `sorry` or `admit`.
+## Part of the Lean proof corpus
+
+One of a family of small, machine-checked Lean 4 developments. Index: [velvetmonkey/lean](https://github.com/velvetmonkey/lean) ([live index](https://velvetmonkey.github.io/lean)).

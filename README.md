@@ -1,11 +1,20 @@
 # trace-logic-lean
 
+[![thread](https://img.shields.io/badge/%F0%9F%A7%B5-how%20it%20works-1DA1F2)](https://x.com/thevelvetmonke)
 [![Lean 4](https://img.shields.io/badge/Lean-4.28.0-blue)](https://lean-lang.org/)
 [![Mathlib](https://img.shields.io/badge/Mathlib-v4.28.0-purple)](https://github.com/leanprover-community/mathlib4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Proofs](https://img.shields.io/badge/proofs-Phase%205%20%2F%200%20sorry-brightgreen)](TraceLogic)
 
 Lean 4 / Mathlib formalisation of Phase 5 Hoffman trace logic for finite Markov chains.
+
+## What this is, and why it matters
+
+The headline theorem is `trace_tower_transient` in `RequestProject/TraceLogicPhase5.lean`. For a matrix with two hidden-state layers, it proves that eliminating the first layer and then the second produces the same trace matrix as eliminating their combined hidden block in one step.
+
+The underlying `trace_tower` theorem establishes the Schur-complement composition identity from three invertibility hypotheses. Phase 5 defines a transient hidden block as a nonnegative matrix for which some power has all row sums strictly below one, proves that `1 - A` is invertible from this condition, and supplies those results to the tower theorem.
+
+Transience is required for all three blocks appearing in the staged calculation: the first hidden block, the hidden block after the first trace, and the combined hidden block. The headline equality does not itself assert that the input or output is row-stochastic, and it uses this finite-power row-sum definition rather than a spectral-radius characterization.
 
 ## Mathematical Setting
 
